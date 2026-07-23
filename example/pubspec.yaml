@@ -1,0 +1,14 @@
+name: syncable_properties_example
+description: Example demonstrating multi-node sync with syncable_properties.
+publish_to: none
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  syncable_properties:
+    path: ..
+  web_socket_channel: ^3.0.0
+
+dev_dependencies:
+  test: ^1.24.0
