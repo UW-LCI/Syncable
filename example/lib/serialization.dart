@@ -132,3 +132,25 @@ String serializeChange(SyncableChange change) {
 
   return jsonEncode(map);
 }
+
+/// Serializes [change] into a JSON envelope that also carries [instanceId], so
+/// a multi-document node can route the change to the correct root Syncable.
+///
+/// [instanceId] is orthogonal to [SyncableChange.path]: path addresses within a
+/// document; instanceId selects which document.
+String serializeEnvelope(String instanceId, SyncableChange change) {
+  final map = jsonDecode(serializeChange(change)) as Map<String, dynamic>;
+  map['instanceId'] = instanceId;
+  return jsonEncode(map);
+}
+
+/// Deserializes a JSON map that may optionally include `instanceId`. Single-
+/// document messages (no instanceId) still deserialize correctly.
+({String? instanceId, SyncableChange change}) deserializeEnvelope(
+  Map<String, dynamic> json,
+) {
+  return (
+    instanceId: json['instanceId'] as String?,
+    change: deserializeChange(json),
+  );
+}

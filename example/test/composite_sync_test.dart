@@ -1,5 +1,6 @@
 import 'package:test/test.dart';
 
+import 'package:syncable_properties_example/document_sync.dart';
 import 'package:syncable_properties_example/models.dart';
 import 'package:syncable_properties_example/sync_network.dart';
 
@@ -141,6 +142,196 @@ void main() {
       expect(feedB.items[1], isA<LinkItem>());
       expect((feedB.items[1] as LinkItem).url.value, 'https://dart.dev');
       expect((feedB.items[1] as LinkItem).caption.value, 'Dart');
+    });
+  });
+
+  group('Multiple root Boards across nodes', () {
+    late MultiBoardHost host;
+    late Board a1, a2, a3;
+    late Board b1, b2, b3;
+
+    setUp(() {
+      host = MultiBoardHost(
+        factory: (nodeId, _) => Board(nodeId)..register(),
+      );
+
+      a1 = Board('clientA')..register();
+      a2 = Board('clientA')..register();
+      a3 = Board('clientA')..register();
+      b1 = Board('clientB')..register();
+      b2 = Board('clientB')..register();
+      b3 = Board('clientB')..register();
+
+      host.addBoard('clientA', 'proj1', a1);
+      host.addBoard('clientA', 'proj2', a2);
+      host.addBoard('clientA', 'proj3', a3);
+      host.addBoard('clientB', 'proj1', b1);
+      host.addBoard('clientB', 'proj2', b2);
+      host.addBoard('clientB', 'proj3', b3);
+    });
+
+    tearDown(() => host.close());
+
+    test('editing one board updates only that board on the peer', () async {
+      a1.name.value = 'Alpha';
+
+      await Future.delayed(const Duration(milliseconds: 10));
+
+      expect(b1.name.value, 'Alpha');
+      expect(b2.name.value, '');
+      expect(b3.name.value, '');
+      expect(a2.name.value, '');
+      expect(a3.name.value, '');
+    });
+
+    test('independent concurrent edits stay isolated per board', () async {
+      a1.name.value = 'from-A-proj1';
+      b2.name.value = 'from-B-proj2';
+      a3.owner.name.value = 'Carol';
+
+      await Future.delayed(const Duration(milliseconds: 10));
+
+      expect(b1.name.value, 'from-A-proj1');
+      expect(a2.name.value, 'from-B-proj2');
+      expect(b3.owner.name.value, 'Carol');
+
+      // Untouched boards remain empty.
+      expect(a1.owner.name.value, '');
+      expect(b1.owner.name.value, '');
+      expect(a2.owner.name.value, '');
+      expect(b2.owner.name.value, '');
+      expect(a3.name.value, '');
+      expect(b3.name.value, '');
+    });
+
+    test('concurrent edits to the same board converge', () async {
+      a1.name.value = 'name-A';
+      b1.name.value = 'name-B';
+      final ca = a1.cards.add();
+      ca.title.value = 'card-A';
+      final cb = b1.cards.add();
+      cb.title.value = 'card-B';
+
+      await Future.delayed(const Duration(milliseconds: 10));
+
+      expect(a1.name.value, b1.name.value);
+      expect(a1.cards.length, 2);
+      expect(b1.cards.length, 2);
+      expect(
+        a1.cards.map((c) => c.title.value).toList(),
+        b1.cards.map((c) => c.title.value).toList(),
+      );
+      expect(
+        a1.cards.map((c) => c.title.value).toSet(),
+        {'card-A', 'card-B'},
+      );
+
+      // Other boards were not touched.
+      expect(a2.cards.isEmpty, true);
+      expect(b2.cards.isEmpty, true);
+      expect(a3.cards.isEmpty, true);
+      expect(b3.cards.isEmpty, true);
+    });
+
+    test('nested and node-list edits are scoped to one board', () async {
+      a2.owner.name.value = 'Owner-2';
+      final card = a2.cards.add();
+      card.title.value = 'scoped';
+      card.labels.add('red');
+      card.labels.add('urgent');
+
+      await Future.delayed(const Duration(milliseconds: 10));
+
+      expect(b2.owner.name.value, 'Owner-2');
+      expect(b2.cards.length, 1);
+      expect(b2.cards[0].title.value, 'scoped');
+      expect(b2.cards[0].labels.toViewList(), ['red', 'urgent']);
+
+      expect(b1.owner.name.value, '');
+      expect(b1.cards.isEmpty, true);
+      expect(b3.owner.name.value, '');
+      expect(b3.cards.isEmpty, true);
+    });
+
+    test('unknown board id is lazily materialized on the peer', () async {
+      final aNew = Board('clientA')..register();
+      host.addBoard('clientA', 'proj-new', aNew);
+      aNew.name.value = 'Discovered';
+      aNew.owner.name.value = 'Discoverer';
+      final card = aNew.cards.add();
+      card.title.value = 'first card';
+
+      await Future.delayed(const Duration(milliseconds: 10));
+
+      final bNew = host.node('clientB')['proj-new'] as Board?;
+      expect(bNew, isNotNull);
+      expect(bNew!.name.value, 'Discovered');
+      expect(bNew.owner.name.value, 'Discoverer');
+      expect(bNew.cards.length, 1);
+      expect(bNew.cards[0].title.value, 'first card');
+
+      // Subsequent edits continue to flow both ways.
+      bNew.owner.color.value = '#00ff00';
+      await Future.delayed(const Duration(milliseconds: 10));
+      expect(aNew.owner.color.value, '#00ff00');
+    });
+
+    test('each board keeps an independent clock domain', () async {
+      expect(a1.lamportClock, 0);
+      expect(a2.lamportClock, 0);
+
+      a1.name.value = 'tick-1';
+      a1.owner.name.value = 'tick-2';
+
+      await Future.delayed(const Duration(milliseconds: 10));
+
+      expect(a1.lamportClock, greaterThan(0));
+      expect(b1.lamportClock, greaterThan(0));
+      expect(a2.lamportClock, 0);
+      expect(b2.lamportClock, 0);
+      expect(a3.lamportClock, 0);
+      expect(b3.lamportClock, 0);
+    });
+
+    test('interleaved edits across three boards converge', () async {
+      a1.name.value = 'P1';
+      b2.name.value = 'P2';
+      a3.name.value = 'P3';
+      await Future.delayed(Duration.zero);
+
+      a1.owner.name.value = 'A1-owner';
+      b2.owner.name.value = 'B2-owner';
+      a3.owner.name.value = 'A3-owner';
+      await Future.delayed(Duration.zero);
+
+      final c1 = a1.cards.add()..title.value = 'c1';
+      final c2 = b2.cards.add()..title.value = 'c2';
+      final c3 = a3.cards.add()..title.value = 'c3';
+      c1.labels.add('l1');
+      c2.labels.add('l2');
+      c3.labels.add('l3');
+
+      await Future.delayed(const Duration(milliseconds: 20));
+
+      expect(b1.name.value, 'P1');
+      expect(a2.name.value, 'P2');
+      expect(b3.name.value, 'P3');
+
+      expect(b1.owner.name.value, 'A1-owner');
+      expect(a2.owner.name.value, 'B2-owner');
+      expect(b3.owner.name.value, 'A3-owner');
+
+      expect(b1.cards.map((c) => c.title.value).toList(), ['c1']);
+      expect(a2.cards.map((c) => c.title.value).toList(), ['c2']);
+      expect(b3.cards.map((c) => c.title.value).toList(), ['c3']);
+
+      expect(b1.cards[0].labels.toViewList(), ['l1']);
+      expect(a2.cards[0].labels.toViewList(), ['l2']);
+      expect(b3.cards[0].labels.toViewList(), ['l3']);
+
+      expect(a1.name.value, b1.name.value);
+      expect(a2.name.value, b2.name.value);
+      expect(a3.name.value, b3.name.value);
     });
   });
 }
