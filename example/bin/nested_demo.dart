@@ -1,7 +1,7 @@
 // ignore_for_file: avoid_print
 
-import 'package:syncable_properties/syncable_properties.dart';
-import 'package:syncable_properties_example/models.dart';
+import 'package:syncable/syncable.dart';
+import 'package:syncable_example/models.dart';
 
 /// Runs two in-memory replicas of a [Board] and mutates the nested structure on
 /// one, showing the whole graph — nested child model and a list of `Card`

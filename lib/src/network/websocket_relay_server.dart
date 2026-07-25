@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'transport.dart';
 
-/// A WebSocket relay for syncable_properties clients.
+/// A WebSocket relay for syncable clients.
 ///
 /// Each connection's first text frame is treated as a [nodeId] handshake and
 /// is not forwarded. Later frames are broadcast to every other connected

@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:syncable_properties/syncable_properties.dart';
+import 'package:syncable/syncable.dart';
 
 void main() {
   group('Serialization round-trip', () {

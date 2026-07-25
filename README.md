@@ -1,4 +1,4 @@
-# syncable_properties
+# syncable
 
 CRDT-based property sync for Dart and Flutter. Model local state as nested `Syncable` trees, exchange Lamport-timestamped changes over a transport, and optionally persist documents through a WebSocket relay.
 
@@ -11,14 +11,14 @@ CRDT-based property sync for Dart and Flutter. Model local state as nested `Sync
 - **Multi-document sync** — `DocumentSyncNode` multiplexes many root documents over one connection (tagged by `instanceId`) and supports catch-up from a persister.
 - **Relay + persistence (VM / desktop)** — `WebSocketRelayServer` broadcasts client frames; `DocumentPersister` can snapshot documents to disk and serve catch-up.
 
-Import the core API from `package:syncable_properties/syncable_properties.dart`. Relay and persister APIs use `dart:io` and live in `package:syncable_properties/syncable_properties_io.dart` — do not import that barrel from Flutter web builds.
+Import the core API from `package:syncable/syncable.dart`. Relay and persister APIs use `dart:io` and live in `package:syncable/syncable_io.dart` — do not import that barrel from Flutter web builds.
 
 ## Getting started
 
 Add the package to your `pubspec.yaml` (path or hosted dependency), then:
 
 ```dart
-import 'package:syncable_properties/syncable_properties.dart';
+import 'package:syncable/syncable.dart';
 ```
 
 Minimal local model:
@@ -93,7 +93,7 @@ Usage: dart run bin/server.dart [port]
 For embedding the relay in your own process:
 
 ```dart
-import 'package:syncable_properties/syncable_properties_io.dart';
+import 'package:syncable/syncable_io.dart';
 
 Future<void> main() async {
   final server = WebSocketRelayServer(port: 8080);
@@ -109,7 +109,7 @@ To add persistence yourself:
 ```dart
 import 'dart:io';
 
-import 'package:syncable_properties/syncable_properties_io.dart';
+import 'package:syncable/syncable_io.dart';
 
 Future<void> main() async {
   final server = WebSocketRelayServer(port: 8080);
@@ -129,7 +129,7 @@ Future<void> main() async {
 Clients import the main library (not the `_io` barrel):
 
 ```dart
-import 'package:syncable_properties/syncable_properties.dart';
+import 'package:syncable/syncable.dart';
 
 final transport = WebSocketClientTransport('node-a', 'ws://127.0.0.1:8080/ws');
 await transport.connect();
@@ -153,3 +153,7 @@ The first outbound frame after connect is the client `nodeId` (handshake). Later
 | `WebSocketClientTransport` | Client transport over WebSockets |
 | `WebSocketRelayServer` | Simple broadcast / unicast relay (`dart:io`) |
 | `DocumentPersister` | Disk snapshots + catch-up source (`dart:io`) |
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE).

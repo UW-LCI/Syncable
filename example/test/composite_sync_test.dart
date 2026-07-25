@@ -1,7 +1,7 @@
 import 'package:test/test.dart';
-import 'package:syncable_properties/syncable_properties.dart';
+import 'package:syncable/syncable.dart';
 
-import 'package:syncable_properties_example/models.dart';
+import 'package:syncable_example/models.dart';
 
 void main() {
   group('Composite sync over the network', () {

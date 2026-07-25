@@ -1,6 +1,6 @@
-# syncable_properties_example
+# syncable_example
 
-Domain models and demos that show how to build nested, composite syncable documents on top of `syncable_properties`. Networking and transport live in the parent package; this package only defines example models and exercises them in-process.
+Domain models and demos that show how to build nested, composite syncable documents on top of `syncable`. Networking and transport live in the parent package; this package only defines example models and exercises them in-process.
 
 ## What it demonstrates
 
@@ -21,7 +21,7 @@ example/
 │   └── nested_demo.dart     # Printable two-replica demo
 ├── test/
 │   └── composite_sync_test.dart
-└── pubspec.yaml             # Depends on syncable_properties via path: ..
+└── pubspec.yaml             # Depends on syncable via path: ..
 ```
 
 | Path | Role |

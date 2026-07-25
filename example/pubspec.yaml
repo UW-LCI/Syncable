@@ -1,12 +1,12 @@
-name: syncable_properties_example
-description: Example demonstrating multi-node sync with syncable_properties.
+name: syncable_example
+description: Example demonstrating multi-node sync with syncable.
 publish_to: none
 
 environment:
   sdk: ^3.12.2
 
 dependencies:
-  syncable_properties:
+  syncable:
     path: ..
 
 dev_dependencies:

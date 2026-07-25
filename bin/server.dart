@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:logger/logger.dart';
-import 'package:syncable_properties/syncable_properties_io.dart';
+import 'package:syncable/syncable_io.dart';
 
 /// Run with:
 /// `dart run bin/server.dart [port] [--persist-dir=<path>] [--persist-interval=<seconds>] [--persist-keep-versions] [--persist-as-of=<yyyyMMddTHHmmssZ>]`

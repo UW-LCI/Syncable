@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:syncable_properties/syncable_properties.dart';
-import 'package:syncable_properties/syncable_properties_io.dart';
+import 'package:syncable/syncable.dart';
+import 'package:syncable/syncable_io.dart';
 
 class _Doc extends Syncable {
   _Doc(super.nodeId);

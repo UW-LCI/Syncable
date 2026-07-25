@@ -1,7 +1,7 @@
-import 'package:syncable_properties/syncable_properties.dart';
+import 'package:syncable/syncable.dart';
 
 /// A collaborative Kanban-style board demonstrating the composite features of
-/// `syncable_properties`:
+/// `syncable`:
 ///
 /// * [Board.owner] is a **nested Syncable** ([Author]).
 /// * [Board.cards] is a **list of Syncable subclasses** ([SyncableNodeList] of
