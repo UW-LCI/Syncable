@@ -1,6 +1,7 @@
 import 'dart:convert';
 
-import 'package:syncable_properties/syncable_properties.dart';
+import '../element_id.dart';
+import '../syncable_change.dart';
 
 class SerializationException implements Exception {
   final String message;
@@ -154,3 +155,78 @@ String serializeEnvelope(String instanceId, SyncableChange change) {
     change: deserializeChange(json),
   );
 }
+
+/// Control-plane message types (not [SyncableChange]).
+const String catchupRequestType = 'catchup_request';
+const String catchupSnapshotType = 'catchup_snapshot';
+
+/// How a client wants the persister to deliver catch-up state.
+enum CatchUpMethod {
+  /// Observed value tree ([Syncable.toJson] / [DynamicSyncable.applyJson]).
+  /// Smaller, but remints CRDT identities on apply.
+  snapshot('snapshot'),
+
+  /// Full CRDT metadata ([Syncable.toCrdtJson] / [Syncable.applyCrdtJson]).
+  /// Preserves element ids, clocks, and tombstones.
+  crdt('crdt');
+
+  const CatchUpMethod(this.wireName);
+  final String wireName;
+
+  static CatchUpMethod? tryParse(String? name) {
+    if (name == null) return null;
+    for (final m in values) {
+      if (m.wireName == name) return m;
+    }
+    return null;
+  }
+
+  static CatchUpMethod parse(String? name, {CatchUpMethod fallback = crdt}) =>
+      tryParse(name) ?? fallback;
+}
+
+bool isControlMessage(Map<String, dynamic> json) {
+  final type = json['type'];
+  return type == catchupRequestType || type == catchupSnapshotType;
+}
+
+String serializeCatchupRequest({
+  required String fromNodeId,
+  CatchUpMethod method = CatchUpMethod.crdt,
+}) =>
+    jsonEncode({
+      'type': catchupRequestType,
+      'fromNodeId': fromNodeId,
+      'method': method.wireName,
+    });
+
+String serializeCatchupSnapshot(
+  Map<String, Map<String, Object?>> documents, {
+  CatchUpMethod method = CatchUpMethod.crdt,
+}) =>
+    jsonEncode({
+      'type': catchupSnapshotType,
+      'method': method.wireName,
+      'documents': documents,
+    });
+
+/// Parsed catch-up response, or `null` if [json] is not a snapshot frame.
+({CatchUpMethod method, Map<String, Map<String, dynamic>> documents})?
+    parseCatchupSnapshot(Map<String, dynamic> json) {
+  if (json['type'] != catchupSnapshotType) return null;
+  final docs = json['documents'];
+  if (docs is! Map) return null;
+  return (
+    method: CatchUpMethod.parse(json['method'] as String?),
+    documents: {
+      for (final e in docs.entries)
+        e.key as String: Map<String, dynamic>.from(e.value as Map),
+    },
+  );
+}
+
+bool isCatchupRequest(Map<String, dynamic> json) =>
+    json['type'] == catchupRequestType;
+
+CatchUpMethod catchupRequestMethod(Map<String, dynamic> json) =>
+    CatchUpMethod.parse(json['method'] as String?);

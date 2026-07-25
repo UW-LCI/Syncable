@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:syncable_properties/syncable_properties.dart';
-
-import 'transport.dart';
+import '../syncable.dart';
+import '../syncable_change.dart';
 import 'serialization.dart';
+import 'transport.dart';
 
 class SyncNetwork {
   final MessageTransport _transport;
@@ -30,7 +30,7 @@ class SyncNetwork {
       if (change.nodeId != nodeId) {
         _model.applyRemoteChange(change);
       }
-    } catch (e) {
+    } catch (_) {
       // Skip malformed messages
     }
   }

@@ -5,8 +5,10 @@ class _NodeEntry<T extends Syncable> {
   final T node;
   double position;
   bool tombstone;
+  String? typeId;
 
-  _NodeEntry(this.id, this.node, this.position) : tombstone = false;
+  _NodeEntry(this.id, this.node, this.position, {this.typeId})
+      : tombstone = false;
 }
 
 /// An ordered, CRDT-backed collection whose elements are themselves nested
@@ -178,7 +180,7 @@ class SyncableNodeList<T extends Syncable> with IterableMixin<T> {
     final node = _construct(typeId);
     _attach(node, elementId);
 
-    final entry = _NodeEntry<T>(elementId, node, position);
+    final entry = _NodeEntry<T>(elementId, node, position, typeId: typeId);
     _entries.add(entry);
     _viewDirty = true;
 
@@ -218,9 +220,11 @@ class SyncableNodeList<T extends Syncable> with IterableMixin<T> {
 
   void _applyRemoteInsert(ElementId id, double position, String? typeId) {
     if (_entries.any((e) => e.id == id)) return;
-    final node = _construct(typeId);
+    // Homogeneous observers (e.g. [DynamicSyncable]) ignore remote typeIds and
+    // always use the single factory; typed lists still require a known id.
+    final node = _isTyped ? _construct(typeId) : _defaultFactory!();
     _attach(node, id);
-    _entries.add(_NodeEntry<T>(id, node, position));
+    _entries.add(_NodeEntry<T>(id, node, position, typeId: typeId));
     _viewDirty = true;
     _replayPendingNested(id);
   }
@@ -293,5 +297,56 @@ class SyncableNodeList<T extends Syncable> with IterableMixin<T> {
     }
     _cachedView = result;
     _viewDirty = false;
+  }
+
+  Map<String, Object?> _toCrdtJson() => {
+        'kind': 'nodeList',
+        'idCounter': _idCounter,
+        'entries': [
+          for (final e in _entries)
+            {
+              'id': e.id.toString(),
+              'position': e.position,
+              'tombstone': e.tombstone,
+              'typeId': e.typeId,
+              'node': e.tombstone ? null : e.node._toCrdtPropertiesJson(),
+            },
+        ],
+      };
+
+  void _applyCrdtJson(Map<String, dynamic> json) {
+    for (final entry in _entries) {
+      if (!entry.tombstone) {
+        entry.node.dispose();
+      }
+    }
+    _entries.clear();
+    _pendingNested.clear();
+    _idCounter = json['idCounter'] as int? ?? 0;
+    final rawEntries = json['entries'] as List? ?? const [];
+    for (final raw in rawEntries) {
+      final map = Map<String, dynamic>.from(raw as Map);
+      final id = _parseElementId(map['id'] as String);
+      final typeId = map['typeId'] as String?;
+      final tombstone = map['tombstone'] as bool? ?? false;
+      final node = _isTyped ? _construct(typeId) : _defaultFactory!();
+      _attach(node, id);
+      final nodeJson = map['node'];
+      if (nodeJson is Map) {
+        node._applyCrdtPropertiesJson(Map<String, dynamic>.from(nodeJson));
+      }
+      final entry = _NodeEntry<T>(
+        id,
+        node,
+        (map['position'] as num).toDouble(),
+        typeId: typeId,
+      );
+      if (tombstone) {
+        entry.tombstone = true;
+        entry.node.dispose();
+      }
+      _entries.add(entry);
+    }
+    _viewDirty = true;
   }
 }

@@ -1,8 +1,7 @@
 import 'package:test/test.dart';
+import 'package:syncable_properties/syncable_properties.dart';
 
-import 'package:syncable_properties_example/document_sync.dart';
 import 'package:syncable_properties_example/models.dart';
-import 'package:syncable_properties_example/sync_network.dart';
 
 void main() {
   group('Composite sync over the network', () {
@@ -146,12 +145,12 @@ void main() {
   });
 
   group('Multiple root Boards across nodes', () {
-    late MultiBoardHost host;
+    late DocumentSyncHost host;
     late Board a1, a2, a3;
     late Board b1, b2, b3;
 
     setUp(() {
-      host = MultiBoardHost(
+      host = DocumentSyncHost(
         factory: (nodeId, _) => Board(nodeId)..register(),
       );
 
@@ -162,12 +161,12 @@ void main() {
       b2 = Board('clientB')..register();
       b3 = Board('clientB')..register();
 
-      host.addBoard('clientA', 'proj1', a1);
-      host.addBoard('clientA', 'proj2', a2);
-      host.addBoard('clientA', 'proj3', a3);
-      host.addBoard('clientB', 'proj1', b1);
-      host.addBoard('clientB', 'proj2', b2);
-      host.addBoard('clientB', 'proj3', b3);
+      host.addDocument('clientA', 'proj1', a1);
+      host.addDocument('clientA', 'proj2', a2);
+      host.addDocument('clientA', 'proj3', a3);
+      host.addDocument('clientB', 'proj1', b1);
+      host.addDocument('clientB', 'proj2', b2);
+      host.addDocument('clientB', 'proj3', b3);
     });
 
     tearDown(() => host.close());
@@ -255,7 +254,7 @@ void main() {
 
     test('unknown board id is lazily materialized on the peer', () async {
       final aNew = Board('clientA')..register();
-      host.addBoard('clientA', 'proj-new', aNew);
+      host.addDocument('clientA', 'proj-new', aNew);
       aNew.name.value = 'Discovered';
       aNew.owner.name.value = 'Discoverer';
       final card = aNew.cards.add();

@@ -240,4 +240,35 @@ class SyncableList<T> with IterableMixin<T> {
     _cachedView = result;
     _viewDirty = false;
   }
+
+  Map<String, Object?> _toCrdtJson() => {
+        'kind': 'list',
+        'idCounter': _idCounter,
+        'entries': [
+          for (final e in _entries)
+            {
+              'id': e.id.toString(),
+              'position': e.position,
+              'tombstone': e.tombstone,
+              'value': e.value,
+            },
+        ],
+      };
+
+  void _applyCrdtJson(Map<String, dynamic> json) {
+    _entries.clear();
+    _idCounter = json['idCounter'] as int? ?? 0;
+    final rawEntries = json['entries'] as List? ?? const [];
+    for (final raw in rawEntries) {
+      final map = Map<String, dynamic>.from(raw as Map);
+      final entry = _ListEntry<T>(
+        _parseElementIdString(map['id'] as String),
+        map['value'] as T,
+        (map['position'] as num).toDouble(),
+      );
+      entry.tombstone = map['tombstone'] as bool? ?? false;
+      _entries.add(entry);
+    }
+    _viewDirty = true;
+  }
 }

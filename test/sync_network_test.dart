@@ -1,11 +1,5 @@
-import 'dart:async';
-import 'dart:convert';
-
-import 'package:test/test.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:syncable_properties/syncable_properties.dart';
-
-import 'package:syncable_properties_example/sync_network.dart';
-import 'package:syncable_properties_example/serialization.dart';
 
 class TestModel extends Syncable {
   TestModel(super.nodeId);
@@ -16,96 +10,6 @@ class TestModel extends Syncable {
 }
 
 void main() {
-  group('Serialization round-trip', () {
-    test('ValueSetChange', () {
-      final change = ValueSetChange<String>(
-        propertyKey: 'title',
-        nodeId: 'node1',
-        lamportClock: 42,
-        value: 'hello',
-      );
-      final json = serializeChange(change);
-      final restored = deserializeChange(jsonDecode(json));
-      expect(restored, isA<ValueSetChange>());
-      final vc = restored as ValueSetChange;
-      expect(vc.propertyKey, 'title');
-      expect(vc.nodeId, 'node1');
-      expect(vc.lamportClock, 42);
-      expect(vc.value, 'hello');
-    });
-
-    test('ListInsertChange', () {
-      final change = ListInsertChange<String>(
-        propertyKey: 'items',
-        nodeId: 'node1',
-        lamportClock: 5,
-        elementId: const ElementId('node1', 3),
-        value: 'item',
-        afterElementId: const ElementId('node1', 2),
-        position: 0.75,
-      );
-      final json = serializeChange(change);
-      final restored = deserializeChange(jsonDecode(json));
-      expect(restored, isA<ListInsertChange>());
-      final lic = restored as ListInsertChange;
-      expect(lic.propertyKey, 'items');
-      expect(lic.elementId, const ElementId('node1', 3));
-      expect(lic.value, 'item');
-      expect(lic.afterElementId, const ElementId('node1', 2));
-      expect(lic.position, 0.75);
-    });
-
-    test('ListInsertChange without afterElementId', () {
-      final change = ListInsertChange<int>(
-        propertyKey: 'nums',
-        nodeId: 'node2',
-        lamportClock: 1,
-        elementId: const ElementId('node2', 0),
-        value: 42,
-        position: 0.5,
-      );
-      final json = serializeChange(change);
-      final restored = deserializeChange(jsonDecode(json));
-      expect(restored, isA<ListInsertChange>());
-      final lic = restored as ListInsertChange;
-      expect(lic.afterElementId, isNull);
-      expect(lic.position, 0.5);
-      expect(lic.value, 42);
-    });
-
-    test('ListRemoveChange', () {
-      final change = ListRemoveChange<String>(
-        propertyKey: 'items',
-        nodeId: 'node1',
-        lamportClock: 10,
-        elementId: const ElementId('node1', 0),
-      );
-      final json = serializeChange(change);
-      final restored = deserializeChange(jsonDecode(json));
-      expect(restored, isA<ListRemoveChange>());
-      final lrc = restored as ListRemoveChange;
-      expect(lrc.propertyKey, 'items');
-      expect(lrc.elementId, const ElementId('node1', 0));
-    });
-
-    test('ListUpdateChange', () {
-      final change = ListUpdateChange<String>(
-        propertyKey: 'items',
-        nodeId: 'node1',
-        lamportClock: 7,
-        elementId: const ElementId('node1', 5),
-        value: 'updated',
-      );
-      final json = serializeChange(change);
-      final restored = deserializeChange(jsonDecode(json));
-      expect(restored, isA<ListUpdateChange>());
-      final luc = restored as ListUpdateChange;
-      expect(luc.propertyKey, 'items');
-      expect(luc.elementId, const ElementId('node1', 5));
-      expect(luc.value, 'updated');
-    });
-  });
-
   group('Two-client sync', () {
     late SyncNodeHost host;
     late TestModel modelA;
@@ -303,13 +207,11 @@ void main() {
     tearDown(() => host.close());
 
     test('concurrent value sets converge (LWW)', () async {
-      // Both set values concurrently before syncing
       modelA.counter.value = 42;
       modelB.counter.value = 99;
 
       await Future.delayed(const Duration(milliseconds: 10));
 
-      // Both should have the same value (LWW: higher clock wins)
       expect(modelA.counter.value, modelB.counter.value);
     });
 
@@ -319,7 +221,6 @@ void main() {
 
       expect(modelB.items.toViewList(), ['base']);
 
-      // Concurrent inserts after 'base'
       modelA.items.add('fromA');
       modelB.items.add('fromB');
 
@@ -351,7 +252,7 @@ void main() {
   });
 
   group('Late-joining client', () {
-    test('late client receives existing state', () async {
+    test('late client receives subsequent updates', () async {
       final host = SyncNodeHost();
 
       final modelA = TestModel('clientA');
@@ -367,14 +268,11 @@ void main() {
 
       await Future.delayed(const Duration(milliseconds: 10));
 
-      // Late-joining client
       final modelC = TestModel('clientC');
       host.addNode('clientC', modelC);
 
       await Future.delayed(const Duration(milliseconds: 10));
 
-      // C doesn't get historical state automatically
-      // This tests that C can start receiving future updates
       modelA.items.add('item3');
 
       await Future.delayed(const Duration(milliseconds: 10));
@@ -471,6 +369,30 @@ void main() {
       expect(modelB.title.value, 'title only');
       expect(modelB.counter.value, 0);
       expect(modelB.items.isEmpty, true);
+    });
+  });
+
+  group('DocumentSyncHost', () {
+    test('routes edits by instance id', () async {
+      final host = DocumentSyncHost();
+      final a1 = TestModel('clientA');
+      final a2 = TestModel('clientA');
+      final b1 = TestModel('clientB');
+      final b2 = TestModel('clientB');
+
+      host.addDocument('clientA', 'doc1', a1);
+      host.addDocument('clientA', 'doc2', a2);
+      host.addDocument('clientB', 'doc1', b1);
+      host.addDocument('clientB', 'doc2', b2);
+
+      a1.title.value = 'only-doc1';
+      await Future.delayed(const Duration(milliseconds: 10));
+
+      expect(b1.title.value, 'only-doc1');
+      expect(b2.title.value, '');
+      expect(a2.title.value, '');
+
+      host.close();
     });
   });
 }

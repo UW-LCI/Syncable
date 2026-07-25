@@ -8,6 +8,7 @@ import 'syncable_change.dart';
 part 'syncable_value.dart';
 part 'syncable_list.dart';
 part 'syncable_node_list.dart';
+part 'dynamic_syncable.dart';
 
 abstract class _SyncableProperty {
   void applyRemote(SyncableChange change);
@@ -193,9 +194,130 @@ class Syncable {
     }
   }
 
+  /// Exports the current observed property tree as a JSON-compatible map.
+  ///
+  /// Values and list elements are included as-is (must already be
+  /// JSON-encodable). Nested Syncables and node-list elements become nested
+  /// maps / lists of maps.
+  Map<String, Object?> toJson() {
+    final out = <String, Object?>{};
+    for (final entry in _properties.entries) {
+      final prop = entry.value;
+      if (prop is _SyncableValueAdapter) {
+        out[entry.key] = prop.value.value;
+      } else if (prop is _SyncableListAdapter) {
+        out[entry.key] = prop.value.toList();
+      } else if (prop is _SyncableChildAdapter) {
+        out[entry.key] = prop.child.toJson();
+      } else if (prop is _SyncableNodeListAdapter) {
+        out[entry.key] = [
+          for (final child in prop.value) child.toJson(),
+        ];
+      }
+    }
+    return out;
+  }
+
+  /// Exports full CRDT state (clocks, element ids, positions, tombstones) for
+  /// persistence and snapshot catch-up. Does not include pending buffers.
+  Map<String, Object?> toCrdtJson() {
+    return {
+      'format': 'syncable_crdt_v1',
+      'lamportClock': lamportClock,
+      'properties': _toCrdtPropertiesMap(),
+    };
+  }
+
+  /// Silently installs CRDT state from [toCrdtJson]. Does not emit
+  /// [onPropertyChange]. Nested [DynamicSyncable] materializes missing keys.
+  void applyCrdtJson(Map<String, dynamic> json) {
+    final props = json['properties'];
+    if (props is Map) {
+      _applyCrdtPropertiesMap(Map<String, dynamic>.from(props));
+    }
+    if (_parent == null && json['lamportClock'] is int) {
+      _lamportClock = json['lamportClock'] as int;
+    }
+  }
+
+  Map<String, Object?> _toCrdtPropertiesJson() => {
+        'properties': _toCrdtPropertiesMap(),
+      };
+
+  void _applyCrdtPropertiesJson(Map<String, dynamic> json) {
+    final props = json['properties'];
+    if (props is Map) {
+      _applyCrdtPropertiesMap(Map<String, dynamic>.from(props));
+    } else {
+      // Allow a bare properties map for nested node payloads.
+      _applyCrdtPropertiesMap(json);
+    }
+  }
+
+  Map<String, Object?> _toCrdtPropertiesMap() {
+    final out = <String, Object?>{};
+    for (final entry in _properties.entries) {
+      final prop = entry.value;
+      if (prop is _SyncableValueAdapter) {
+        out[entry.key] = prop.value._toCrdtJson();
+      } else if (prop is _SyncableListAdapter) {
+        out[entry.key] = prop.value._toCrdtJson();
+      } else if (prop is _SyncableChildAdapter) {
+        out[entry.key] = {
+          'kind': 'child',
+          'properties': prop.child._toCrdtPropertiesMap(),
+        };
+      } else if (prop is _SyncableNodeListAdapter) {
+        out[entry.key] = prop.value._toCrdtJson();
+      }
+    }
+    return out;
+  }
+
+  void _applyCrdtPropertiesMap(Map<String, dynamic> props) {
+    for (final entry in props.entries) {
+      final key = entry.key;
+      final raw = entry.value;
+      if (raw is! Map) continue;
+      final map = Map<String, dynamic>.from(raw);
+      final kind = map['kind'] as String?;
+      _ensureCrdtProperty(key, kind);
+      final prop = _properties[key];
+      if (prop == null) {
+        throw StateError(
+          "Cannot apply CRDT property '$key' (kind: $kind): not registered "
+          "on $runtimeType. Access or register syncable properties before "
+          "applyCrdtJson (DynamicSyncable materializes automatically).",
+        );
+      }
+      if (prop is _SyncableValueAdapter) {
+        prop.value._applyCrdtJson(map);
+      } else if (prop is _SyncableListAdapter) {
+        prop.value._applyCrdtJson(map);
+      } else if (prop is _SyncableChildAdapter) {
+        final nested = map['properties'];
+        if (nested is Map) {
+          prop.child._applyCrdtPropertiesMap(Map<String, dynamic>.from(nested));
+        }
+      } else if (prop is _SyncableNodeListAdapter) {
+        prop.value._applyCrdtJson(map);
+      }
+    }
+  }
+
+  /// Ensures a property exists for CRDT restore. Default: no-op for typed
+  /// models (properties must already be registered). [DynamicSyncable]
+  /// overrides to materialize from [kind].
+  void _ensureCrdtProperty(String key, String? kind) {}
+
   void dispose() {
     _changeController.close();
   }
+}
+
+ElementId _parseElementIdString(String s) {
+  final idx = s.lastIndexOf(':');
+  return ElementId(s.substring(0, idx), int.parse(s.substring(idx + 1)));
 }
 
 class _SyncableValueAdapter<T> extends _SyncableProperty {

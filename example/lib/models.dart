@@ -10,7 +10,7 @@ import 'package:syncable_properties/syncable_properties.dart';
 ///   element.
 ///
 /// Every mutation anywhere in this tree flows through the board's single stream
-/// and clock, so wiring one [Board] to a [SyncNetwork] syncs the whole graph.
+/// and clock, so wiring one [Board] to a network transport syncs the whole graph.
 class Author extends Syncable {
   Author(super.nodeId);
 
