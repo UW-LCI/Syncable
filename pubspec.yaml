@@ -1,4 +1,4 @@
-name: syncable_properties
+name: syncable
 description: "CRDT-based data syncing library"
 version: 0.0.1
 homepage:
