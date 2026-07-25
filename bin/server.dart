@@ -4,11 +4,14 @@ import 'package:logger/logger.dart';
 import 'package:syncable/syncable_io.dart';
 
 /// Run with:
-/// `dart run bin/server.dart [port] [--persist-dir=<path>] [--persist-interval=<seconds>] [--persist-keep-versions] [--persist-as-of=<yyyyMMddTHHmmssZ>]`
+/// `dart run bin/server.dart [port] [--host=<ip>] [--persist-dir=<path>] [--persist-interval=<seconds>] [--persist-keep-versions] [--persist-as-of=<yyyyMMddTHHmmssZ>]`
 void main(List<String> args) async {
   final parsed = _parseArgs(args);
   final logger = Logger();
-  final server = WebSocketRelayServer(port: parsed.port);
+  final server = WebSocketRelayServer(
+    address: parsed.host,
+    port: parsed.port,
+  );
   await server.start();
   logger.d('WebSocket relay server running on ${server.wsUrl}');
 
@@ -37,6 +40,7 @@ void main(List<String> args) async {
 }
 
 class _Args {
+  final InternetAddress host;
   final int port;
   final String? persistDir;
   final int persistIntervalSeconds;
@@ -44,6 +48,7 @@ class _Args {
   final DateTime? persistAsOf;
 
   _Args({
+    required this.host,
     required this.port,
     required this.persistDir,
     required this.persistIntervalSeconds,
@@ -53,6 +58,7 @@ class _Args {
 }
 
 _Args _parseArgs(List<String> args) {
+  var host = InternetAddress.loopbackIPv4;
   var port = 8080;
   String? persistDir;
   var persistIntervalSeconds = 60;
@@ -62,7 +68,17 @@ _Args _parseArgs(List<String> args) {
   var sawPersistAsOf = false;
 
   for (final arg in args) {
-    if (arg.startsWith('--persist-dir=')) {
+    if (arg.startsWith('--host=')) {
+      final raw = arg.substring('--host='.length);
+      if (raw.isEmpty) {
+        _usage('Empty --host value.');
+      }
+      final parsed = InternetAddress.tryParse(raw);
+      if (parsed == null) {
+        _usage('Invalid --host: $raw (expected an IP address)');
+      }
+      host = parsed;
+    } else if (arg.startsWith('--persist-dir=')) {
       persistDir = arg.substring('--persist-dir='.length);
       if (persistDir.isEmpty) {
         _usage('Empty --persist-dir value.');
@@ -104,6 +120,7 @@ _Args _parseArgs(List<String> args) {
   }
 
   return _Args(
+    host: host,
     port: port,
     persistDir: persistDir,
     persistIntervalSeconds: persistIntervalSeconds,
@@ -115,7 +132,7 @@ _Args _parseArgs(List<String> args) {
 Never _usage(String message) {
   stderr.writeln(message);
   stderr.writeln(
-    'Usage: dart run bin/server.dart [port] '
+    'Usage: dart run bin/server.dart [port] [--host=<ip>] '
     '[--persist-dir=<path>] [--persist-interval=<seconds>] '
     '[--persist-keep-versions] [--persist-as-of=<yyyyMMddTHHmmssZ>]',
   );

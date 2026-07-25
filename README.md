@@ -43,13 +43,17 @@ From the package root:
 dart run bin/server.dart
 ```
 
-Default port is **8080**. The process listens for WebSocket clients at `ws://127.0.0.1:<port>/ws`.
+Default port is **8080**, host is **127.0.0.1**. The process listens for WebSocket clients at `ws://<host>:<port>/ws`.
 
-#### Port only
+#### Port and host
 
 ```bash
 dart run bin/server.dart 9000
+dart run bin/server.dart --host=0.0.0.0
+dart run bin/server.dart 9000 --host=192.168.1.10
 ```
+
+`--host` accepts an IP address. Use `0.0.0.0` (or a specific NIC IP) to accept connections from other machines. Clients must connect with a reachable host — not `0.0.0.0`.
 
 #### With document persistence
 
@@ -83,7 +87,7 @@ dart run bin/server.dart --persist-dir=./data --persist-as-of=20260724T180000Z
 Usage on error:
 
 ```text
-Usage: dart run bin/server.dart [port]
+Usage: dart run bin/server.dart [port] [--host=<ip>]
   [--persist-dir=<path>] [--persist-interval=<seconds>]
   [--persist-keep-versions] [--persist-as-of=<yyyyMMddTHHmmssZ>]
 ```
@@ -93,16 +97,21 @@ Usage: dart run bin/server.dart [port]
 For embedding the relay in your own process:
 
 ```dart
+import 'dart:io';
+
 import 'package:syncable/syncable_io.dart';
 
 Future<void> main() async {
-  final server = WebSocketRelayServer(port: 8080);
+  final server = WebSocketRelayServer(
+    address: InternetAddress.anyIPv4, // or a specific NIC IP
+    port: 8080,
+  );
   await server.start();
   print('Relay at ${server.wsUrl}');
 }
 ```
 
-`WebSocketRelayServer` defaults to loopback IPv4, port `5582`, path `/ws`. Use `port: 0` for an ephemeral port, then read `boundPort` / `wsUrl`.
+`WebSocketRelayServer` defaults to loopback IPv4, port `5582`, path `/ws`. Pass `address` to bind another interface. Use `port: 0` for an ephemeral port, then read `boundPort` / `wsUrl`.
 
 To add persistence yourself:
 

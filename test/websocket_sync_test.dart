@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:syncable/syncable.dart';
 import 'package:syncable/syncable_io.dart';
@@ -119,6 +121,29 @@ void main() {
       await Future.delayed(const Duration(milliseconds: 50));
 
       expect(peerB.model.title.value, 'after-garbage');
+    });
+  });
+
+  group('WebSocket bind address', () {
+    test('anyIPv4 accepts clients via 127.0.0.1', () async {
+      final server = WebSocketRelayServer(
+        address: InternetAddress.anyIPv4,
+        port: 0,
+      );
+      await server.start();
+      final wsUrl = 'ws://127.0.0.1:${server.boundPort}${server.path}';
+
+      final peerA = await _connectPeer('clientA', wsUrl);
+      final peerB = await _connectPeer('clientB', wsUrl);
+
+      peerA.model.title.value = 'lan-ok';
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      expect(peerB.model.title.value, 'lan-ok');
+
+      peerA.close();
+      peerB.close();
+      await server.close();
     });
   });
 
