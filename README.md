@@ -1,39 +1,155 @@
-<!--
-This README describes the package. If you publish this package to pub.dev,
-this README's contents appear on the landing page for your package.
+# syncable_properties
 
-For information about how to write a good package README, see the guide for
-[writing package pages](https://dart.dev/tools/pub/writing-package-pages).
+CRDT-based property sync for Dart and Flutter. Model local state as nested `Syncable` trees, exchange Lamport-timestamped changes over a transport, and optionally persist documents through a WebSocket relay.
 
-For general information about developing packages, see the Dart guide for
-[creating packages](https://dart.dev/guides/libraries/create-packages)
-and the Flutter guide for
-[developing packages and plugins](https://flutter.dev/to/develop-packages).
--->
+## What it does
 
-TODO: Put a short description of the package here that helps potential users
-know whether this package might be useful for them.
+- **Syncable models** — Register values, lists, nested children, and homogeneous node lists on a `Syncable`. Each replica has a `nodeId`; concurrent updates resolve with last-writer-wins (Lamport clock + node id).
+- **Nested documents** — Changes bubble to the root with a path, so deep trees stay consistent without flattening your domain model.
+- **Dynamic documents** — `DynamicSyncable` materializes properties on demand from remote changes when you do not have a fixed schema.
+- **Networking** — Serialize `SyncableChange` messages, bind a model (or many documents) to a `MessageTransport`, and sync over in-memory hubs or WebSockets.
+- **Multi-document sync** — `DocumentSyncNode` multiplexes many root documents over one connection (tagged by `instanceId`) and supports catch-up from a persister.
+- **Relay + persistence (VM / desktop)** — `WebSocketRelayServer` broadcasts client frames; `DocumentPersister` can snapshot documents to disk and serve catch-up.
 
-## Features
-
-TODO: List what your package can do. Maybe include images, gifs, or videos.
+Import the core API from `package:syncable_properties/syncable_properties.dart`. Relay and persister APIs use `dart:io` and live in `package:syncable_properties/syncable_properties_io.dart` — do not import that barrel from Flutter web builds.
 
 ## Getting started
 
-TODO: List prerequisites and provide or point to information on how to
-start using the package.
-
-## Usage
-
-TODO: Include short and useful examples for package users. Add longer examples
-to `/example` folder.
+Add the package to your `pubspec.yaml` (path or hosted dependency), then:
 
 ```dart
-const like = 'sample';
+import 'package:syncable_properties/syncable_properties.dart';
 ```
 
-## Additional information
+Minimal local model:
 
-TODO: Tell users more about the package: where to find more information, how to
-contribute to the package, how to file issues, what response they can expect
-from the package authors, and more.
+```dart
+final doc = Syncable('node-a');
+final title = doc.syncableValue<String>('title', '');
+title.value = 'Hello';
+```
+
+Wire a single document to a transport with `SyncNetwork`, or many documents with `DocumentSyncNode` + `WebSocketClientTransport`.
+
+## Starting the relay server
+
+The package ships a CLI entrypoint and a programmatic API.
+
+### CLI (`bin/server.dart`)
+
+From the package root:
+
+```bash
+dart run bin/server.dart
+```
+
+Default port is **8080**. The process listens for WebSocket clients at `ws://127.0.0.1:<port>/ws`.
+
+#### Port only
+
+```bash
+dart run bin/server.dart 9000
+```
+
+#### With document persistence
+
+Pass `--persist-dir` to attach a `DocumentPersister` that connects to the relay, loads snapshots from disk, and periodically flushes CRDT state:
+
+```bash
+dart run bin/server.dart --persist-dir=./data
+```
+
+Optional persistence flags (all require `--persist-dir`):
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--persist-interval=<seconds>` | `60` | Flush interval |
+| `--persist-keep-versions` | off | Keep historical snapshot files instead of deleting older ones |
+| `--persist-as-of=<yyyyMMddTHHmmssZ>` | latest | Load the newest snapshot at or before this UTC stamp |
+
+Examples:
+
+```bash
+# Custom port + persistence every 30s
+dart run bin/server.dart 9000 --persist-dir=./data --persist-interval=30
+
+# Retain versioned snapshots
+dart run bin/server.dart --persist-dir=./data --persist-keep-versions
+
+# Restore as of a point in time, then keep syncing
+dart run bin/server.dart --persist-dir=./data --persist-as-of=20260724T180000Z
+```
+
+Usage on error:
+
+```text
+Usage: dart run bin/server.dart [port]
+  [--persist-dir=<path>] [--persist-interval=<seconds>]
+  [--persist-keep-versions] [--persist-as-of=<yyyyMMddTHHmmssZ>]
+```
+
+### Programmatic API
+
+For embedding the relay in your own process:
+
+```dart
+import 'package:syncable_properties/syncable_properties_io.dart';
+
+Future<void> main() async {
+  final server = WebSocketRelayServer(port: 8080);
+  await server.start();
+  print('Relay at ${server.wsUrl}');
+}
+```
+
+`WebSocketRelayServer` defaults to loopback IPv4, port `5582`, path `/ws`. Use `port: 0` for an ephemeral port, then read `boundPort` / `wsUrl`.
+
+To add persistence yourself:
+
+```dart
+import 'dart:io';
+
+import 'package:syncable_properties/syncable_properties_io.dart';
+
+Future<void> main() async {
+  final server = WebSocketRelayServer(port: 8080);
+  await server.start();
+
+  final persister = DocumentPersister(
+    wsUrl: server.wsUrl,
+    directory: Directory('./data'),
+    interval: const Duration(seconds: 60),
+  );
+  await persister.start();
+}
+```
+
+### Connecting a client
+
+Clients import the main library (not the `_io` barrel):
+
+```dart
+import 'package:syncable_properties/syncable_properties.dart';
+
+final transport = WebSocketClientTransport('node-a', 'ws://127.0.0.1:8080/ws');
+await transport.connect();
+
+final node = DocumentSyncNode(
+  transport,
+  factory: (nodeId, instanceId) => DynamicSyncable(nodeId),
+);
+```
+
+The first outbound frame after connect is the client `nodeId` (handshake). Later frames are sync or control messages; the relay broadcasts to other peers, or delivers unicast wrappers to a named peer.
+
+## Features at a glance
+
+| Piece | Role |
+|-------|------|
+| `Syncable` / `SyncableValue` / `SyncableList` / `SyncableNodeList` | Local CRDT property graph |
+| `DynamicSyncable` | Schema-free replica for persistence / unknown shapes |
+| `SyncNetwork` / `SyncNodeHost` | Single-doc sync; in-memory multi-node host |
+| `DocumentSyncNode` / `DocumentSyncHost` | Multi-doc sync + catch-up |
+| `WebSocketClientTransport` | Client transport over WebSockets |
+| `WebSocketRelayServer` | Simple broadcast / unicast relay (`dart:io`) |
+| `DocumentPersister` | Disk snapshots + catch-up source (`dart:io`) |
